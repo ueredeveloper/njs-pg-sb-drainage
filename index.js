@@ -1,7 +1,7 @@
 
 const express = require('express');
 const app = express();
-const {convertionToPostgres} = require('./tools')
+const { convertionPolygonToPostgis } = require('./tools')
 
 app.use(express.static('public'));
 app.use(express.json())
@@ -13,46 +13,90 @@ const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
-* Recebe um polígono e busca em um banco postgress os pontos outorgados dentro daquele polígono.
-* @param polygon {array} String de um polígono no formato postgres SQL, ex: let polygon = 'POLYGON((0 0, 8 0, 4 4, 0 0))
+* Recebe um polígono e busca no anco postgress os pontos outorgados dentro daquele polígono.
+* @param polygon {array} String de um polígono no formato postgres SQL, ex: let polygon = 'SRID=4674;POLYGON((1 2, 2 3, 4 5))'
 */
-app.post('/getPointsByPolygon', async function(req, res){
-  let pg_polygon = await convertionToPostgres(req.body);
-  let points = await selectContains (pg_polygon)
-  await res.send(JSON.stringify({points: points}))
-})
+app.post('/getPointsInsidePolygon', async function(req, res) {
 
-/**
-  * Selecionar todos os resultados e mostrar as colunas id e shape
-  */
-async function selectAll (){
+  let polygon = convertionPolygonToPostgis(req.body);
   const { data, error } = await supabase
-  .from('interferencia')
-  .select(`
-   id, shape
-  `);
-  if (error){
+    .rpc('getpointsinsidepolygon', { polygon: polygon })
+  if (error) {
     console.log(error)
   } else {
-    console.log(data)
+    res.send(JSON.stringify(data))
   }
+});
+/**
+* Buscar pontos em um retângulo
+* @param nex {float} Noroeste longitude
+* @param ney {float} Noroeste latitude
+* @param swx {float} Sudoeste longitude
+* @param swy {float} Sudoeste longitude
+* @returns {array[]} Interferencias outorgadas.
+*/
+app.post('/getPointsInsideRectangle', async function(req, res) {
+
+
+
+  let { nex, ney, swx, swy } = req.body;
+
+  const { data, error } = await supabase
+    .rpc('getpointsinsiderectangle', { nex: nex, ney: ney, swx: swx, swy: swy })
+  if (error) {
+    console.log(error)
+  } else {
+    res.send(JSON.stringify(data))
+  }
+});
+
+app.post('/getPointsInsideCicle', async function(req, res) {
+  let { center, radius } = req.body;
+
+  const { data, error } = await supabase
+    .rpc(
+      'getpointsinsidecircle',
+      { center: `POINT(${center.lng} ${center.lat})`, radius: parseInt(radius) }
+    );
+
+  if (error) {
+    console.log(error)
+  } else {
+    res.send(JSON.stringify(data))
+  }
+});
+/**
+  * Inserir ponto de coordenada no banco. 
+  * SQL eg: insert into interferencia (shape) values ('POINT(0 0)')
+  *
+  *
+  */
+app.get('/insertPoint', async function(req, res) {
+  let { lat, lng } = req.query;
+  console.log(lat, lng)
+  const { error } = await supabase
+    .from('interferencia')
+    .insert({ shape: `POINT(${lng} ${lat})` })
+  if (error) {
+    console.log(error)
+  } else {
+    res.send("Ponton inserido!")
+  }
+})
+
+async function getPointsInsiedCircle(cicle) {
+
+  console.log(circle)
+  /*
+  const { data, error } = await supabase
+    //função criada no supabase
+    .rpc('getpointsinsidecircle', { center: center, radius: radius })
+  if (error) console.log(error)
+  return data*/
+
 }
-
-//selectAll()
-
-async function selectContains (polygon){
-  //let polygon = 'POLYGON((0 0, 8 0, 4 4, 0 0))'
-  const {data, error} = await supabase
-  .rpc('selectcontains', {polygon: polygon})
-    
-    //(`SELECT * FROM interferencia WHERE ST_Contains(ST_AsText('POLYGON((0 0, 8 0, 4 4, 0 0))'), shape)`)
- if(error) console.log(error)
- return data
-}
-
-//selectContains();
 
 const port = 3000;
-app.listen(port, function(){
+app.listen(port, function() {
   console.log(`porta ${port}`)
 })
