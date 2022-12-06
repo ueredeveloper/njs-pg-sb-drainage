@@ -1,16 +1,18 @@
 
 const express = require('express');
 const app = express();
-const { convertionPolygonToPostgis } = require('./tools')
+const { convertionPolygonToPostgis } = require('./tools');
+const xml2js = require('xml2js');
 
 app.use(express.static('public'));
 app.use(express.json())
 
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const spURL = process.env.SUPABASE_URL;
+const spKey = process.env.SUPABASE_KEY;
+const spServiceRole = process.env.SERVICE_ROLE
+const supabase = createClient(spURL, spKey);
 
 /**
 * Recebe um polígono e busca no anco postgress os pontos outorgados dentro daquele polígono.
@@ -36,8 +38,6 @@ app.post('/getPointsInsidePolygon', async function(req, res) {
 * @returns {array[]} Interferencias outorgadas.
 */
 app.post('/getPointsInsideRectangle', async function(req, res) {
-
-
 
   let { nex, ney, swx, swy } = req.body;
 
@@ -76,25 +76,69 @@ app.get('/insertPoint', async function(req, res) {
   console.log(lat, lng)
   const { error } = await supabase
     .from('interferencia')
-    .insert({ shape: `POINT(${lng} ${lat})` })
+    .insert({ australia: false, shape: `POINT(${lng} ${lat})`, PROCESSO: 'PROCESSO' })
   if (error) {
     console.log(error)
   } else {
     res.send("Ponton inserido!")
   }
-})
+});
 
-async function getPointsInsiedCircle(cicle) {
+app.post('/insertPoints', async function(req, res) {
 
-  console.log(circle)
-  /*
+  let outorga = req.body;
+  // capturar lng e lat => x, y
+  let { x, y} = outorga[0].int_shape.points[0];
+  let {fin_finalidade, dt_demanda} = outorga[0];
+  // modificar o objeto para o formato do banco postgres
+  outorga[0].int_shape = `POINT(${x} ${y})`;
+
+  xml2js.parseString(
+    fin_finalidade,
+    {explicitRoot:false, preserveChildrenOrder:true}, (err, result) => {
+  if (err) {
+    throw err
+  }
+  outorga[0].fin_finalidade = JSON.stringify(result)
+});
+
+  xml2js.parseString(dt_demanda,{explicitRoot:false, preserveChildrenOrder:true}, (err, result) => {
+  if (err) {
+    throw err
+  }
+  outorga[0].dt_demanda = JSON.stringify(result)
+});
+
   const { data, error } = await supabase
-    //função criada no supabase
-    .rpc('getpointsinsidecircle', { center: center, radius: radius })
-  if (error) console.log(error)
-  return data*/
+    .from('outorgas')
+    .upsert(outorga[0],
+      { onConflict: 'int_id' })
+    .select()
+  if (error) {
 
-}
+    res.send(JSON.stringify({ message: error }))
+  } else {
+    console.log(data, error)
+    res.send(JSON.stringify({ message: error, data: data }))
+  }
+
+  /*
+  let points = req.body;
+  let response = await points.map((point, i) => {
+    const { error } = supabase
+      .from('outorgas')
+      .insert({ PROCESSO: point.PROCESSO })
+    if (error) {
+      return { id: i, message: error }
+    } else {
+      return { id: i, message: 'ok' }
+    }
+
+  });
+  */
+
+  // res.send(response)
+});
 
 const port = 3000;
 app.listen(port, function() {
