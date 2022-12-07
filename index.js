@@ -1,18 +1,15 @@
-
 const express = require('express');
 const app = express();
 const { convertionPolygonToPostgis } = require('./tools');
-const xml2js = require('xml2js');
 
 app.use(express.static('public'));
-app.use(express.json())
+app.use(express.json());
 
 const { createClient } = require('@supabase/supabase-js');
 
-const spURL = process.env.SUPABASE_URL;
-const spKey = process.env.SUPABASE_KEY;
-const spServiceRole = process.env.SERVICE_ROLE
-const supabase = createClient(spURL, spKey);
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /**
 * Recebe um polígono e busca no anco postgress os pontos outorgados dentro daquele polígono.
@@ -68,76 +65,18 @@ app.post('/getPointsInsideCicle', async function(req, res) {
 /**
   * Inserir ponto de coordenada no banco. 
   * SQL eg: insert into interferencia (shape) values ('POINT(0 0)')
-  *
-  *
   */
 app.get('/insertPoint', async function(req, res) {
   let { lat, lng } = req.query;
   console.log(lat, lng)
   const { error } = await supabase
     .from('interferencia')
-    .insert({ australia: false, shape: `POINT(${lng} ${lat})`, PROCESSO: 'PROCESSO' })
+    .insert({ australia: false, shape: `POINT(${parseFloat(lng)} ${parseFloat(lat)})`, PROCESSO: 'PROCESSO' })
   if (error) {
     console.log(error)
   } else {
     res.send("Ponton inserido!")
   }
-});
-
-app.post('/insertPoints', async function(req, res) {
-
-  let outorga = req.body;
-  // capturar lng e lat => x, y
-  let { x, y} = outorga[0].int_shape.points[0];
-  let {fin_finalidade, dt_demanda} = outorga[0];
-  // modificar o objeto para o formato do banco postgres
-  outorga[0].int_shape = `POINT(${x} ${y})`;
-
-  xml2js.parseString(
-    fin_finalidade,
-    {explicitRoot:false, preserveChildrenOrder:true}, (err, result) => {
-  if (err) {
-    throw err
-  }
-  outorga[0].fin_finalidade = JSON.stringify(result)
-});
-
-  xml2js.parseString(dt_demanda,{explicitRoot:false, preserveChildrenOrder:true}, (err, result) => {
-  if (err) {
-    throw err
-  }
-  outorga[0].dt_demanda = JSON.stringify(result)
-});
-
-  const { data, error } = await supabase
-    .from('outorgas')
-    .upsert(outorga[0],
-      { onConflict: 'int_id' })
-    .select()
-  if (error) {
-
-    res.send(JSON.stringify({ message: error }))
-  } else {
-    console.log(data, error)
-    res.send(JSON.stringify({ message: error, data: data }))
-  }
-
-  /*
-  let points = req.body;
-  let response = await points.map((point, i) => {
-    const { error } = supabase
-      .from('outorgas')
-      .insert({ PROCESSO: point.PROCESSO })
-    if (error) {
-      return { id: i, message: error }
-    } else {
-      return { id: i, message: 'ok' }
-    }
-
-  });
-  */
-
-  // res.send(response)
 });
 
 const port = 3000;
